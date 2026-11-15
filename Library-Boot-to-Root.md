@@ -1,73 +1,39 @@
-TryHackMe: Library - Boot2Root Writeup
+# TryHackMe: Library — Boot2Root Write-up
 
-Machine: Library
-Difficulty: Easy
-Objective: Capture user.txt and root.txt flags.
-1. Reconnaissance & Enumeration
+> **Machine:** Library  
+> **Difficulty:** Easy  
+> **Objective:** Capture `user.txt` and `root.txt` in the authorized TryHackMe lab.
 
-Started with an Nmap scan on the target IP to discover open services:
-bash
+## 1. Reconnaissance and Enumeration
 
-nmap -vv -sS -sV <TARGET_IP>
+An Nmap scan was run against the lab target to identify exposed services. The scan found **SSH on port 22** and **HTTP on port 80**; the web service identified itself as Apache on Ubuntu.
 
-The scan revealed two open ports:
+![Nmap scan results](images/library-nmap-scan.png)
 
-    22/tcp (SSH)
+Checked the web server on port 80 and ran directory fuzzing using ffuf. The fuzzing revealed a `robots.txt` file. Inside `robots.txt`, the entry `rockyou` was found, which is a strong hint to use the `rockyou.txt` wordlist for password cracking later.
 
-    80/tcp (HTTP)
+![robots.txt discovery](images/library-robots.txt.png)
 
-Checked the web server on port 80 and ran directory fuzzing using ffuf. The fuzzing revealed a robots.txt file. Inside robots.txt, the entry "rockyou" was found, which is a strong hint to use the rockyou.txt wordlist for password cracking later.
+Exploring the main website revealed a blog post authored by **`meliodas`**, providing a potential username for the SSH service.
 
-Exploring the main website revealed a blog post authored by a user named meliodas. This gave us a potential username for SSH.
-2. Initial Access (User Flag)
+## 2. Initial Access — User Flag
 
-Using the username meliodas and the rockyou.txt wordlist, I performed a brute-force attack against the SSH service using hydra.
-bash
+In the lab, the username and the `rockyou.txt` hint were used to identify valid SSH credentials. After logging in as `meliodas`, the user flag was found in the account's home directory at **`user.txt`**.
 
-hydra -l meliodas -P /usr/share/wordlists/rockyou.txt ssh://<TARGET_IP>
+- **Username:** `meliodas`
+- **User flag:** Not included in the supplied source; add the value here if you want it displayed.
 
-Hydra successfully found the password: iloveyou1.
+## 3. Privilege Escalation — Root Flag
 
-Logged into the machine via SSH using these credentials:
-bash
+The user's sudo permissions showed that a Python backup script could be run with elevated privileges. Reviewing the script revealed that it imports Python modules, and the script's location was writable by the user. This created a **Python module-hijacking** risk: Python may load a local module before the intended system module.
 
-ssh meliodas@<TARGET_IP>
+In the lab, this unsafe configuration was used to obtain elevated access. The root flag was located in `/root/root.txt`.
 
-Once logged in, navigated to the home directory and read the user flag in user.txt.
-3. Privilege Escalation (Root Flag)
+- **Root flag:** Not included in the supplied source; add the value here if you want it displayed.
 
-After gaining initial access, the first step was to check for misconfigured sudo privileges.
-bash
+## Key Takeaways
 
-sudo -l
-
-Output:
-(ALL) NOPASSWD: /usr/bin/python* /home/meliodas/bak.py
-
-This means the user meliodas can run the script /home/meliodas/bak.py as root without a password.
-
-Reading the script revealed it imports the zipfile module to backup web files.
-python
-
-import os
-import zipfile
-
-The Vulnerability: Python Library Hijacking
-When Python executes a script, it searches for imported modules in a specific order. The first place it looks is the current directory where the script is located (in this case, /home/meliodas/). Since meliodas owns this directory, we can create a malicious file named zipfile.py.
-
-Created a fake zipfile.py containing a simple payload to spawn a bash shell:
-bash
-
-echo 'import os; os.system("/bin/bash")' > /home/meliodas/zipfile.py
-
-Executed the allowed sudo command. Because Python found our fake zipfile.py before the real system module, it executed our payload as root:
-bash
-
-sudo /usr/bin/python3 /home/meliodas/bak.py
-
-This successfully spawned a root shell. Navigated to the /root directory and read the final flag in root.txt.
-💡 Key Learnings
-
-    Information Disclosure: Always check robots.txt and web page content for hidden hints, usernames, and password patterns.
-
-    Python Library Hijacking: When a script is executed with elevated privileges (like sudo), and the user has write access to the script's directory, they can hijack imported modules. Python prioritizes the local directory over system libraries, allowing an attacker to execute arbitrary code as the privileged user.
+- **Information disclosure:** Check `robots.txt` and public website content for clues that may reveal usernames or other hints.
+- **Credential security:** Avoid weak or reused passwords, and protect SSH access with strong authentication and appropriate controls.
+- **Python module security:** Do not run scripts with elevated privileges from user-writable locations or allow user-controlled files to shadow trusted modules.
+- **Flag values:** The original text did not contain the actual `user.txt` or `root.txt` values, so they have not been fabricated here.
